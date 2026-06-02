@@ -1,0 +1,77 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id             Int      @id @default(autoincrement())
+  username       String   @unique
+  password_hash  String
+  wallet_balance Float    @default(1000)
+  createdAt      DateTime @default(now())
+
+  products     Product[]
+  buyerOrders  Order[]   @relation("BuyerOrders")
+  sellerOrders Order[]   @relation("SellerOrders")
+  riderOrders  Order[]   @relation("RiderOrders")
+
+  @@map("users")
+}
+
+model Product {
+  id        Int     @id @default(autoincrement())
+  seller_id Int
+  name      String
+  image     String?
+  price     Float
+  lat       Float
+  lng       Float
+
+  seller     User        @relation(fields: [seller_id], references: [id])
+  orderItems OrderItem[]
+
+  @@map("products")
+}
+
+model Order {
+  id           Int         @id @default(autoincrement())
+  buyer_id     Int
+  seller_id    Int
+  rider_id     Int?
+  status       OrderStatus @default(waiting)
+  total_price  Float
+  delivery_fee Float
+  buyer_lat    Float
+  buyer_lng    Float
+  createdAt    DateTime    @default(now())
+
+  buyer  User        @relation("BuyerOrders",  fields: [buyer_id],  references: [id])
+  seller User        @relation("SellerOrders", fields: [seller_id], references: [id])
+  rider  User?       @relation("RiderOrders",  fields: [rider_id],  references: [id])
+  items  OrderItem[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id         Int   @id @default(autoincrement())
+  order_id   Int
+  product_id Int
+  qty        Int
+  price      Float
+
+  order   Order   @relation(fields: [order_id],   references: [id])
+  product Product @relation(fields: [product_id], references: [id])
+
+  @@map("order_items")
+}
+
+enum OrderStatus {
+  waiting
+  pickup
+  completed
+  cancelled
+}
