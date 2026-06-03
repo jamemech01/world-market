@@ -8,7 +8,8 @@ RUN npm install
 COPY . .
 
 RUN npx prisma generate
-RUN npm run build
+RUN npx tsc -p tsconfig.build.json --incremental false
+RUN ls -la dist/
 
 EXPOSE 3000
 
