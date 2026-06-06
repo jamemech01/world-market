@@ -10,6 +10,6 @@ COPY . .
 RUN npx prisma generate
 RUN npx tsc -p tsconfig.build.json --incremental false
 
-EXPOSE 3000
+EXPOSE 8080
 
 CMD ["node", "dist/main"]
