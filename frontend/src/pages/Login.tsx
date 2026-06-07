@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import axios from 'axios'
 
-const API = import.meta.env.VITE_API_URL
+const API = `https://${import.meta.env.VITE_API_URL}`
 
 export default function Login() {
   const [isRegister, setIsRegister] = useState(false)
