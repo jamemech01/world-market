@@ -27,6 +27,7 @@ export class UsersService {
       select: {
         id: true,
         username: true,
+        canOpenShop: true,
       },
     });
   }
