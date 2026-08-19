@@ -12,7 +12,12 @@ type Order = {
   deliveryLat: number
   deliveryLng: number
   shop: { id: number; name: string } | null
-  items: { id: number; productName: string; quantity: number; price: string }[]
+  items: {
+    id: number
+    productName: string
+    quantity: number
+    price: string
+  }[]
 }
 
 export default function MyOrders() {
@@ -24,6 +29,8 @@ export default function MyOrders() {
   const loadOrders = () => {
     getMyOrders()
       .then((orders) => {
+        sessionStorage.setItem('my_orders_read', 'true')
+
         const sorted = [...orders].sort((a, b) => {
           const aAction = a.status === 'delivered' ? 1 : 0
           const bAction = b.status === 'delivered' ? 1 : 0
@@ -59,11 +66,21 @@ export default function MyOrders() {
     }
   }
 
-  if (loading) return <div className="p-4">Loading...</div>
+  if (loading) {
+    return <div className="p-4">Loading...</div>
+  }
 
   return (
-    <PageLayout title="My Orders">
-      {error && <p className="text-sm mb-2">{error}</p>}
+    <PageLayout>
+      <h1 className="text-lg font-medium mb-4">
+        My Orders
+      </h1>
+
+      {error && (
+        <p className="text-sm mb-2">
+          {error}
+        </p>
+      )}
 
       <div className="flex flex-col gap-2">
         {orders.map((order) => (
@@ -108,13 +125,32 @@ export default function MyOrders() {
 
             <div className="text-sm mt-1">
               <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span>
+                  $
+                  {order.items
+                    .reduce(
+                      (sum, item) =>
+                        sum +
+                        Number(item.price) * item.quantity,
+                      0,
+                    )
+                    .toFixed(2)}
+                </span>
+              </div>
+
+              <div className="flex justify-between">
                 <span>Delivery</span>
-                <span>${Number(order.deliveryFee).toFixed(2)}</span>
+                <span>
+                  ${Number(order.deliveryFee).toFixed(2)}
+                </span>
               </div>
 
               <div className="flex justify-between font-medium">
                 <span>Total</span>
-                <span>${Number(order.totalAmount).toFixed(2)}</span>
+                <span>
+                  ${Number(order.totalAmount).toFixed(2)}
+                </span>
               </div>
             </div>
 
@@ -130,7 +166,11 @@ export default function MyOrders() {
           </div>
         ))}
 
-        {orders.length === 0 && <p className="text-sm">No orders yet</p>}
+        {orders.length === 0 && (
+          <p className="text-sm">
+            No orders yet
+          </p>
+        )}
       </div>
     </PageLayout>
   )

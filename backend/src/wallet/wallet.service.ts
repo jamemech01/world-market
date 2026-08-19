@@ -2,27 +2,29 @@ import {
   BadRequestException,
   Injectable,
 } from '@nestjs/common'
-import { PrismaService } from '../prisma/prisma.service'
 import { Prisma } from '@prisma/client'
+
+import { PrismaService } from '../prisma/prisma.service'
 
 const MAX_TOPUP = new Prisma.Decimal(
   '99999999.99',
 )
 
+const MAX_WALLET_BALANCE =
+  new Prisma.Decimal('99999999.99')
+
 @Injectable()
 export class WalletService {
   constructor(
     private prisma: PrismaService,
-  ) {}
+  ) { }
 
   async getOrCreateWallet(userId: number) {
     return this.prisma.wallet.upsert({
       where: {
         userId,
       },
-
       update: {},
-
       create: {
         userId,
         balance: new Prisma.Decimal(0),
@@ -39,7 +41,14 @@ export class WalletService {
         where: {
           walletId: wallet.id,
         },
-
+        include: {
+          order: {
+            include: {
+              items: true,
+              shop: true,
+            },
+          },
+        },
         orderBy: {
           createdAt: 'desc',
         },
@@ -89,12 +98,24 @@ export class WalletService {
 
     return this.prisma.$transaction(
       async (tx) => {
+        const newBalance =
+          wallet.balance.add(decimal)
+
+        if (
+          newBalance.greaterThan(
+            MAX_WALLET_BALANCE,
+          )
+        ) {
+          throw new BadRequestException(
+            'Maximum wallet balance is 99,999,999.99',
+          )
+        }
+
         const updated =
           await tx.wallet.update({
             where: {
               id: wallet.id,
             },
-
             data: {
               balance: {
                 increment: decimal,

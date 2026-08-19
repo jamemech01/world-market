@@ -16,7 +16,6 @@ enum OrderStatus {
 
 enum WalletTransactionType {
   topup
-  hold
   refund
   sale
 }
@@ -45,11 +44,13 @@ model Shop {
 }
 
 model Product {
-  id     Int     @id @default(autoincrement())
-  name   String
-  price  Decimal @db.Decimal(10, 2)
-  stock  Int     @default(0)
-  shopId Int
+  id       Int     @id @default(autoincrement())
+  name     String
+  category String @default("Other")
+  price    Decimal @db.Decimal(10, 2)
+  stock    Int     @default(0)
+  imageUrl String?
+  shopId   Int
 
   shop       Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
   orderItems OrderItem[]
@@ -67,11 +68,13 @@ model Wallet {
 model WalletTransaction {
   id        Int                   @id @default(autoincrement())
   walletId  Int
+  orderId   Int?
   type      WalletTransactionType
   amount    Decimal               @db.Decimal(10, 2)
   createdAt DateTime              @default(now())
 
   wallet Wallet @relation(fields: [walletId], references: [id])
+  order  Order? @relation(fields: [orderId], references: [id])
 }
 
 model Order {
@@ -79,16 +82,16 @@ model Order {
   buyerId      Int
   shopId       Int?
   totalAmount  Decimal     @db.Decimal(10, 2)
-  deliveryFee Decimal @default(0) @db.Decimal(10, 2)
+  deliveryFee  Decimal     @default(0) @db.Decimal(10, 2)
   deliveryLat  Float
   deliveryLng  Float
   status       OrderStatus @default(pending)
   createdAt    DateTime    @default(now())
 
-  buyer User  @relation(fields: [buyerId], references: [id])
-  shop  Shop? @relation(fields: [shopId], references: [id], onDelete: SetNull)
-
-  items OrderItem[]
+  buyer        User                 @relation(fields: [buyerId], references: [id])
+  shop         Shop?                @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  items        OrderItem[]
+  transactions WalletTransaction[]
 }
 
 model OrderItem {

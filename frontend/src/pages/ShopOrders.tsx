@@ -44,22 +44,22 @@ export default function ShopOrders() {
     getShopOrders()
       .then((orders) => {
         const sorted = [...orders].sort((a, b) => {
-          const statusOrder = {
-            pending: 0,
-            accepted: 1,
-            delivered: 2,
-            completed: 3,
-            rejected: 4,
-          }
+          const aPriority =
+            a.status === 'pending'
+              ? 2
+              : a.status === 'accepted'
+                ? 1
+                : 0
 
-          const aStatus =
-            statusOrder[a.status as keyof typeof statusOrder] ?? 99
+          const bPriority =
+            b.status === 'pending'
+              ? 2
+              : b.status === 'accepted'
+                ? 1
+                : 0
 
-          const bStatus =
-            statusOrder[b.status as keyof typeof statusOrder] ?? 99
-
-          if (aStatus !== bStatus) {
-            return aStatus - bStatus
+          if (aPriority !== bPriority) {
+            return bPriority - aPriority
           }
 
           return (
@@ -102,11 +102,21 @@ export default function ShopOrders() {
     }
   }
 
-  if (loading) return <div className="p-4">Loading...</div>
+  if (loading) {
+    return <div className="p-4">Loading...</div>
+  }
 
   return (
-    <PageLayout title="Shop Orders">
-      {error && <p className="text-sm mb-2">{error}</p>}
+    <PageLayout>
+      <h1 className="text-lg font-medium mb-4">
+        Shop Orders
+      </h1>
+
+      {error && (
+        <p className="text-sm mb-2">
+          {error}
+        </p>
+      )}
 
       <div className="flex flex-col gap-2">
         {orders.map((order) => (
@@ -143,6 +153,21 @@ export default function ShopOrders() {
 
             <div className="text-sm mt-1">
               <div className="flex justify-between">
+                <span>Subtotal</span>
+                <span>
+                  $
+                  {order.items
+                    .reduce(
+                      (sum, item) =>
+                        sum +
+                        Number(item.price) * item.quantity,
+                      0,
+                    )
+                    .toFixed(2)}
+                </span>
+              </div>
+
+              <div className="flex justify-between">
                 <span>Delivery</span>
                 <span>
                   ${Number(order.deliveryFee).toFixed(2)}
@@ -162,7 +187,9 @@ export default function ShopOrders() {
                 <button
                   type="button"
                   className="border flex-1 py-2 text-sm"
-                  onClick={() => act(acceptOrder, order.id)}
+                  onClick={() =>
+                    act(acceptOrder, order.id)
+                  }
                 >
                   Accept
                 </button>
@@ -170,7 +197,9 @@ export default function ShopOrders() {
                 <button
                   type="button"
                   className="border flex-1 py-2 text-sm"
-                  onClick={() => act(rejectOrder, order.id)}
+                  onClick={() =>
+                    act(rejectOrder, order.id)
+                  }
                 >
                   Reject
                 </button>
@@ -192,7 +221,9 @@ export default function ShopOrders() {
         ))}
 
         {orders.length === 0 && (
-          <p className="text-sm">No orders yet</p>
+          <p className="text-sm">
+            No orders yet
+          </p>
         )}
       </div>
     </PageLayout>

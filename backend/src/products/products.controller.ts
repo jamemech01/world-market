@@ -9,7 +9,10 @@ import {
   Delete,
   Request,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common'
+import { FileInterceptor } from '@nestjs/platform-express'
 
 import { JwtGuard } from '../auth/jwt.guard'
 import { ProductsService } from './products.service'
@@ -23,20 +26,21 @@ export class ProductsController {
     private productsService: ProductsService,
   ) {}
 
-  // Create Product
   @UseGuards(JwtGuard)
   @Post()
+  @UseInterceptors(FileInterceptor('image'))
   create(
     @Request() req: any,
     @Body() dto: CreateProductDto,
+    @UploadedFile() file?: any,
   ) {
     return this.productsService.create(
       req.user.userId,
       dto,
+      file,
     )
   }
 
-  // Get Products By Shop
   @Get('shop/:shopId')
   findByShop(
     @Param('shopId', ParseIntPipe) shopId: number,
@@ -44,7 +48,6 @@ export class ProductsController {
     return this.productsService.findByShop(shopId)
   }
 
-  // Edit Product: name + price
   @UseGuards(JwtGuard)
   @Patch(':id')
   update(
@@ -59,7 +62,21 @@ export class ProductsController {
     )
   }
 
-  // Update Stock: stock only
+  @UseGuards(JwtGuard)
+  @Patch(':id/image')
+  @UseInterceptors(FileInterceptor('image'))
+  updateImage(
+    @Request() req: any,
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFile() file?: any,
+  ) {
+    return this.productsService.updateImage(
+      req.user.userId,
+      id,
+      file,
+    )
+  }
+
   @UseGuards(JwtGuard)
   @Patch(':id/stock')
   updateStock(
@@ -74,7 +91,6 @@ export class ProductsController {
     )
   }
 
-  // Delete Product
   @UseGuards(JwtGuard)
   @Delete(':id')
   remove(

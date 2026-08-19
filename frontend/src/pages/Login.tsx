@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../services/api'
 
@@ -9,12 +9,31 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [slow, setSlow] = useState(false)
 
+  const usernameRef = useRef<HTMLInputElement>(null)
   const passwordRef = useRef<HTMLInputElement>(null)
   const confirmRef = useRef<HTMLInputElement>(null)
 
+  useEffect(() => {
+    const lastUsername =
+      localStorage.getItem('last_username') || ''
+
+    setUsername(lastUsername)
+
+    if (lastUsername) {
+      passwordRef.current?.focus()
+    } else {
+      usernameRef.current?.focus()
+    }
+  }, [])
+
   const handleSubmit = async () => {
+    if (loading) return
+
     setError('')
+    setSlow(false)
 
     if (!username || !password) {
       setError('Fill in all fields')
@@ -26,13 +45,37 @@ export default function Login() {
       return
     }
 
+    const timer = setTimeout(() => {
+      setSlow(true)
+    }, 2000)
+
     try {
-      const endpoint = isRegister ? '/auth/register' : '/auth/login'
-      const res = await api.post(endpoint, { username, password })
+      setLoading(true)
+
+      const endpoint = isRegister
+        ? '/auth/register'
+        : '/auth/login'
+
+      const res = await api.post(endpoint, {
+        username,
+        password,
+      })
+
       localStorage.setItem('token', res.data.access_token)
+      localStorage.setItem('last_username', username)
+
+      sessionStorage.removeItem('home_map_view')
+
       navigate('/')
     } catch (e: any) {
-      setError(e.response?.data?.message || 'Something went wrong')
+      setError(
+        e.response?.data?.message ||
+          'Something went wrong',
+      )
+    } finally {
+      clearTimeout(timer)
+      setLoading(false)
+      setSlow(false)
     }
   }
 
@@ -45,11 +88,16 @@ export default function Login() {
 
         <div className="flex flex-col gap-2">
           <input
+            ref={usernameRef}
             className="border px-3 py-2"
             placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && passwordRef.current?.focus()}
+            onKeyDown={(e) =>
+              e.key === 'Enter' &&
+              passwordRef.current?.focus()
+            }
+            disabled={loading}
           />
 
           <input
@@ -61,8 +109,11 @@ export default function Login() {
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) =>
               e.key === 'Enter' &&
-              (isRegister ? confirmRef.current?.focus() : handleSubmit())
+              (isRegister
+                ? confirmRef.current?.focus()
+                : handleSubmit())
             }
+            disabled={loading}
           />
 
           {isRegister && (
@@ -72,26 +123,58 @@ export default function Login() {
               type="password"
               placeholder="Confirm Password"
               value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+              onChange={(e) =>
+                setConfirmPassword(e.target.value)
+              }
+              onKeyDown={(e) =>
+                e.key === 'Enter' && handleSubmit()
+              }
+              disabled={loading}
             />
           )}
 
-          {error && <p className="text-sm">{error}</p>}
+          {slow && !error && (
+            <p className="text-sm">
+              Server is starting, please wait...
+            </p>
+          )}
 
-          <button type="button" className="border px-3 py-2" onClick={handleSubmit}>
-            {isRegister ? 'Register' : 'Login'}
+          {error && (
+            <p className="text-sm">
+              {error}
+            </p>
+          )}
+
+          <button
+            type="button"
+            className="border px-3 py-2"
+            onClick={handleSubmit}
+            disabled={loading}
+          >
+            {loading
+              ? isRegister
+                ? 'Registering...'
+                : 'Logging in...'
+              : isRegister
+                ? 'Register'
+                : 'Login'}
           </button>
 
           <button
             type="button"
             className="text-sm underline"
             onClick={() => {
+              if (loading) return
+
               setIsRegister(!isRegister)
               setError('')
+              setSlow(false)
             }}
+            disabled={loading}
           >
-            {isRegister ? 'Have an account? Login' : 'No account? Register'}
+            {isRegister
+              ? 'Have an account? Login'
+              : 'No account? Register'}
           </button>
         </div>
       </div>

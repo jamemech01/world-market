@@ -11,7 +11,7 @@ export class TopupDto {
     /^\d+(\.\d{1,2})?$/,
     {
       message:
-        'Amount must be a positive number with maximum 2 decimal places',
+        'Amount must be positive with max 2 decimals',
     },
   )
   amount!: string

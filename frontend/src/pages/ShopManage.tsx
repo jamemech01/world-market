@@ -11,15 +11,35 @@ import {
   createProduct,
   getProductsByShop,
   updateProduct,
+  updateProductImage,
   updateProductStock,
   deleteProduct,
 } from '../services/product'
 
-type Product = { id: number; name: string; price: string; stock: number }
-type Shop = { id: number; name: string; lat: number; lng: number }
-type ModalType = 'add' | 'edit' | 'stock' | null
+type Product = {
+  id: number
+  name: string
+  category: string
+  price: string
+  stock: number
+  imageUrl?: string | null
+}
 
-const PAGE_SIZE = 8
+type Shop = {
+  id: number
+  name: string
+  lat: number
+  lng: number
+}
+
+type ModalType =
+  | 'add'
+  | 'edit'
+  | 'image'
+  | 'stock'
+  | null
+
+const PAGE_SIZE = 10
 
 export default function ShopManage() {
   const navigate = useNavigate()
@@ -35,20 +55,26 @@ export default function ShopManage() {
   const [modal, setModal] = useState<ModalType>(null)
   const [selected, setSelected] = useState<Product | null>(null)
   const [name, setName] = useState('')
+  const [category, setCategory] = useState('')
   const [price, setPrice] = useState('')
   const [stock, setStock] = useState('')
+  const [image, setImage] = useState<File | undefined>()
+  const [imagePreview, setImagePreview] = useState('')
 
   const [shopName, setShopName] = useState('')
   const [editingShop, setEditingShop] = useState(false)
-  const [deleteProductTarget, setDeleteProductTarget] = useState<Product | null>(null)
+  const [deleteProductTarget, setDeleteProductTarget] =
+    useState<Product | null>(null)
   const [deleteShopOpen, setDeleteShopOpen] = useState(false)
 
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
 
   const nameRef = useRef<HTMLInputElement>(null)
+  const categoryRef = useRef<HTMLInputElement>(null)
   const priceRef = useRef<HTMLInputElement>(null)
   const stockRef = useRef<HTMLInputElement>(null)
+  const imageRef = useRef<HTMLInputElement>(null)
 
   const loadProducts = async (shopId: number) => {
     try {
@@ -65,6 +91,7 @@ export default function ShopManage() {
           navigate('/', { replace: true })
           return
         }
+
         setShop(data)
         setShopName(data.name)
         loadProducts(data.id)
@@ -73,31 +100,65 @@ export default function ShopManage() {
       .finally(() => setLoading(false))
   }, [navigate])
 
-  const filtered = useMemo(() => {
-    return products.filter((p) => {
-      const matchesSearch = p.name.toLowerCase().includes(search.toLowerCase())
-      const matchesFilter =
-        filter === 'all' ||
-        (filter === 'in_stock' && p.stock > 0) ||
-        (filter === 'out_of_stock' && p.stock === 0)
+  const categoryOptions = useMemo(() => {
+    const categories = [
+      ...new Set(
+        products
+          .map((product) => product.category?.trim())
+          .filter(Boolean),
+      ),
+    ]
 
-      return matchesSearch && matchesFilter
+    return [
+      { label: 'All categories', value: 'all' },
+      ...categories.map((category) => ({
+        label: category,
+        value: category,
+      })),
+    ]
+  }, [products])
+
+  const filtered = useMemo(() => {
+    return products.filter((product) => {
+      const matchesSearch = product.name
+        .toLowerCase()
+        .includes(search.toLowerCase())
+
+      const matchesCategory =
+        filter === 'all' || product.category === filter
+
+      return matchesSearch && matchesCategory
     })
   }, [products, search, filter])
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filtered.length / PAGE_SIZE),
+  )
+
+  const paged = filtered.slice(
+    (page - 1) * PAGE_SIZE,
+    page * PAGE_SIZE,
+  )
 
   const resetForm = () => {
     setName('')
+    setCategory('')
     setPrice('')
     setStock('')
+    setImage(undefined)
+    setImagePreview('')
     setError('')
     setSelected(null)
+
+    if (imageRef.current) {
+      imageRef.current.value = ''
+    }
   }
 
   const closeModal = () => {
     if (saving) return
+
     setModal(null)
     resetForm()
   }
@@ -112,7 +173,11 @@ export default function ShopManage() {
 
     try {
       setSaving(true)
-      const data = await updateShop({ name: shopName.trim() })
+
+      const data = await updateShop({
+        name: shopName.trim(),
+      })
+
       setShop(data)
       setEditingShop(false)
     } catch (e: any) {
@@ -125,8 +190,30 @@ export default function ShopManage() {
   const handleSubmitProduct = async () => {
     setError('')
 
-    if (!name.trim() || !price || (modal === 'add' && !stock)) {
-      setError('Fill in all fields')
+    const productPrice = Number(price)
+    const productStock = Number(stock)
+
+    if (!name.trim()) {
+      setError('Enter product name')
+      return
+    }
+
+    if (
+      price === '' ||
+      !Number.isFinite(productPrice) ||
+      productPrice <= 0
+    ) {
+      setError('Price must be greater than 0')
+      return
+    }
+
+    if (
+      modal === 'add' &&
+      (stock === '' ||
+        !Number.isInteger(productStock) ||
+        productStock < 0)
+    ) {
+      setError('Enter a valid stock number')
       return
     }
 
@@ -136,17 +223,50 @@ export default function ShopManage() {
       if (modal === 'add') {
         await createProduct({
           name: name.trim(),
-          price: Number(price),
-          stock: Number(stock),
-        })
-      } else if (modal === 'edit' && selected) {
-        await updateProduct(selected.id, {
-          name: name.trim(),
-          price: Number(price),
+          category: category.trim(),
+          price: productPrice,
+          stock: productStock,
+          image,
         })
       }
 
-      if (shop) await loadProducts(shop.id)
+      if (modal === 'edit' && selected) {
+        await updateProduct(selected.id, {
+          name: name.trim(),
+          category: category.trim(),
+          price: productPrice,
+        })
+      }
+
+      if (shop) {
+        await loadProducts(shop.id)
+      }
+
+      closeModal()
+    } catch (e: any) {
+      setError(e.response?.data?.message || 'Failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleUpdateImage = async () => {
+    if (!selected || !image) {
+      setError('Select an image')
+      return
+    }
+
+    setError('')
+
+    try {
+      setSaving(true)
+
+      await updateProductImage(selected.id, image)
+
+      if (shop) {
+        await loadProducts(shop.id)
+      }
+
       closeModal()
     } catch (e: any) {
       setError(e.response?.data?.message || 'Failed')
@@ -160,18 +280,25 @@ export default function ShopManage() {
 
     setError('')
 
-    const n = Number(stock)
+    const value = Number(stock)
 
-    if (stock === '' || !Number.isInteger(n) || n < 0) {
+    if (
+      stock === '' ||
+      !Number.isInteger(value) ||
+      value < 0
+    ) {
       setError('Enter a valid stock number')
       return
     }
 
     try {
       setSaving(true)
-      await updateProductStock(selected.id, n)
 
-      if (shop) await loadProducts(shop.id)
+      await updateProductStock(selected.id, value)
+
+      if (shop) {
+        await loadProducts(shop.id)
+      }
 
       closeModal()
     } catch (e: any) {
@@ -186,8 +313,10 @@ export default function ShopManage() {
 
     try {
       setSaving(true)
+
       await deleteProduct(deleteProductTarget.id)
       await loadProducts(shop.id)
+
       setDeleteProductTarget(null)
     } catch (e: any) {
       setError(e.response?.data?.message || 'Failed')
@@ -199,7 +328,9 @@ export default function ShopManage() {
   const handleDeleteShop = async () => {
     try {
       setSaving(true)
+
       await deleteShop()
+
       navigate('/', { replace: true })
     } catch (e: any) {
       setError(e.response?.data?.message || 'Failed')
@@ -209,38 +340,51 @@ export default function ShopManage() {
     }
   }
 
-  if (loading) return <div className="p-4">Loading...</div>
-  if (!shop) return null
+  if (loading) {
+    return <div className="p-4">Loading...</div>
+  }
+
+  if (!shop) {
+    return null
+  }
 
   return (
-    <PageLayout title={shop.name}>
-      <div className="flex gap-2 mb-4">
-        <button
-          type="button"
-          className="border px-3 py-2 text-sm"
-          onClick={() => {
-            setShopName(shop.name)
-            setEditingShop(true)
-          }}
-        >
-          Rename
-        </button>
+    <PageLayout>
+      <div className="flex items-center gap-2 mb-3">
+        <h1 className="min-w-0 flex-1 truncate text-lg font-medium">
+          {shop.name}
+        </h1>
 
-        <button
-          type="button"
-          className="border px-3 py-2 text-sm"
-          onClick={() => setDeleteShopOpen(true)}
-        >
-          Delete Shop
-        </button>
+        <div className="flex shrink-0 gap-2">
+          <button
+            type="button"
+            className="border px-3 py-2 text-sm"
+            onClick={() => {
+              setShopName(shop.name)
+              setError('')
+              setEditingShop(true)
+            }}
+          >
+            Rename
+          </button>
+
+          <button
+            type="button"
+            className="border px-3 py-2 text-sm"
+            onClick={() => {
+              setError('')
+              setDeleteShopOpen(true)
+            }}
+          >
+            Delete Shop
+          </button>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="font-medium">Products</h2>
-
+      <div className="flex items-center gap-2 mb-3">
         <button
           type="button"
-          className="border px-3 py-2 text-sm"
+          className="shrink-0 border px-3 py-2 text-sm"
           onClick={() => {
             resetForm()
             setModal('add')
@@ -248,75 +392,91 @@ export default function ShopManage() {
         >
           Add
         </button>
+
+        <div className="shrink-0">
+          <FilterSelect
+            value={filter}
+            onChange={(value) => {
+              setFilter(value)
+              setPage(1)
+            }}
+            options={categoryOptions}
+          />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <SearchBar
+            value={search}
+            onChange={(value) => {
+              setSearch(value)
+              setPage(1)
+            }}
+          />
+        </div>
       </div>
 
-      <SearchBar
-        value={search}
-        onChange={(v) => {
-          setSearch(v)
-          setPage(1)
-        }}
-      />
-
-      <FilterSelect
-        value={filter}
-        onChange={(v) => {
-          setFilter(v)
-          setPage(1)
-        }}
-        options={[
-          { label: 'All', value: 'all' },
-          { label: 'In stock', value: 'in_stock' },
-          { label: 'Out of stock', value: 'out_of_stock' },
-        ]}
-      />
-
-      <div className="grid grid-cols-2 gap-2 mt-2">
+      <div className="grid grid-cols-2 gap-2 items-stretch">
         {paged.map((product) => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            actions={
-              <div className="grid grid-cols-3 gap-1 mt-2">
-                <button
-                  type="button"
-                  className="border py-1 text-xs"
-                  onClick={() => {
-                    setSelected(product)
-                    setName(product.name)
-                    setPrice(product.price)
-                    setModal('edit')
-                  }}
-                >
-                  Edit
-                </button>
+          <div key={product.id} className="h-full">
+            <ProductCard
+              product={product}
+              onEditImage={() => {
+                setError('')
+                setSelected(product)
+                setImage(undefined)
+                setImagePreview(product.imageUrl || '')
+                setModal('image')
+              }}
+              actions={
+                <div className="grid grid-cols-3 gap-1 mt-2">
+                  <button
+                    type="button"
+                    className="border py-1 text-xs"
+                    onClick={() => {
+                      setError('')
+                      setSelected(product)
+                      setName(product.name)
+                      setCategory(product.category)
+                      setPrice(product.price)
+                      setModal('edit')
+                    }}
+                  >
+                    Edit
+                  </button>
 
-                <button
-                  type="button"
-                  className="border py-1 text-xs"
-                  onClick={() => {
-                    setSelected(product)
-                    setStock(String(product.stock))
-                    setModal('stock')
-                  }}
-                >
-                  Stock
-                </button>
+                  <button
+                    type="button"
+                    className="border py-1 text-xs"
+                    onClick={() => {
+                      setError('')
+                      setSelected(product)
+                      setStock(String(product.stock))
+                      setModal('stock')
+                    }}
+                  >
+                    Stock
+                  </button>
 
-                <button
-                  type="button"
-                  className="border py-1 text-xs"
-                  onClick={() => setDeleteProductTarget(product)}
-                >
-                  Delete
-                </button>
-              </div>
-            }
-          />
+                  <button
+                    type="button"
+                    className="border py-1 text-xs"
+                    onClick={() => {
+                      setError('')
+                      setDeleteProductTarget(product)
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              }
+            />
+          </div>
         ))}
 
         {paged.length === 0 && (
-          <p className="text-sm col-span-2">No products found</p>
+          <p className="text-sm col-span-2">
+            No products found
+          </p>
         )}
       </div>
 
@@ -333,7 +493,9 @@ export default function ShopManage() {
       {editingShop && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center p-4 z-50">
           <div className="bg-white border p-4 w-full max-w-sm">
-            <h2 className="font-medium mb-2">Rename Shop</h2>
+            <h2 className="font-medium mb-2">
+              Rename Shop
+            </h2>
 
             <input
               autoFocus
@@ -341,19 +503,26 @@ export default function ShopManage() {
               value={shopName}
               onChange={(e) => setShopName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSaveShopName()
+                if (e.key === 'Enter') {
+                  handleSaveShopName()
+                }
               }}
               maxLength={20}
               disabled={saving}
             />
 
-            {error && <p className="text-sm mb-2">{error}</p>}
+            {error && (
+              <p className="text-sm mb-2">{error}</p>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 className="border px-3 py-2"
-                onClick={() => setEditingShop(false)}
+                onClick={() => {
+                  setError('')
+                  setEditingShop(false)
+                }}
                 disabled={saving}
               >
                 Cancel
@@ -380,7 +549,9 @@ export default function ShopManage() {
                 ? 'Add Product'
                 : modal === 'edit'
                   ? 'Edit Product'
-                  : 'Update Stock'}
+                  : modal === 'image'
+                    ? 'Edit Image'
+                    : 'Update Stock'}
             </h2>
 
             {(modal === 'add' || modal === 'edit') && (
@@ -394,9 +565,24 @@ export default function ShopManage() {
                   onChange={(e) => setName(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
+                      categoryRef.current?.focus()
+                    }
+                  }}
+                  disabled={saving}
+                />
+
+                <input
+                  ref={categoryRef}
+                  className="w-full border px-3 py-2 mb-2"
+                  placeholder="Category (optional)"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
                       priceRef.current?.focus()
                     }
                   }}
+                  maxLength={20}
                   disabled={saving}
                 />
 
@@ -404,6 +590,8 @@ export default function ShopManage() {
                   ref={priceRef}
                   className="w-full border px-3 py-2 mb-2"
                   type="number"
+                  min="0.01"
+                  step="0.01"
                   placeholder="Price"
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
@@ -424,15 +612,86 @@ export default function ShopManage() {
                     ref={stockRef}
                     className="w-full border px-3 py-2 mb-2"
                     type="number"
+                    min="0"
+                    step="1"
                     placeholder="Stock"
                     value={stock}
                     onChange={(e) => setStock(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
-                        handleSubmitProduct()
+                        imageRef.current?.focus()
                       }
                     }}
                     disabled={saving}
+                  />
+                )}
+
+                {modal === 'add' && (
+                  <>
+                    <input
+                      ref={imageRef}
+                      className="w-full border px-3 py-2 mb-2"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+
+                        setImage(file)
+
+                        if (file) {
+                          setImagePreview(
+                            URL.createObjectURL(file),
+                          )
+                        } else {
+                          setImagePreview('')
+                        }
+                      }}
+                      disabled={saving}
+                    />
+
+                    {imagePreview && (
+                      <img
+                        src={imagePreview}
+                        alt="Preview"
+                        className="w-full aspect-square object-cover border mb-2"
+                      />
+                    )}
+                  </>
+                )}
+              </>
+            )}
+
+            {modal === 'image' && (
+              <>
+                <input
+                  ref={imageRef}
+                  autoFocus
+                  className="w-full border px-3 py-2 mb-2"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+
+                    setImage(file)
+
+                    if (file) {
+                      setImagePreview(
+                        URL.createObjectURL(file),
+                      )
+                    } else {
+                      setImagePreview(
+                        selected?.imageUrl || '',
+                      )
+                    }
+                  }}
+                  disabled={saving}
+                />
+
+                {imagePreview && (
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="w-full aspect-square object-cover border mb-2"
                   />
                 )}
               </>
@@ -443,6 +702,8 @@ export default function ShopManage() {
                 autoFocus
                 className="w-full border px-3 py-2 mb-2"
                 type="number"
+                min="0"
+                step="1"
                 placeholder="Stock"
                 value={stock}
                 onChange={(e) => setStock(e.target.value)}
@@ -455,7 +716,9 @@ export default function ShopManage() {
               />
             )}
 
-            {error && <p className="text-sm mb-2">{error}</p>}
+            {error && (
+              <p className="text-sm mb-2">{error}</p>
+            )}
 
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -474,7 +737,9 @@ export default function ShopManage() {
                 onClick={
                   modal === 'stock'
                     ? handleUpdateStock
-                    : handleSubmitProduct
+                    : modal === 'image'
+                      ? handleUpdateImage
+                      : handleSubmitProduct
                 }
               >
                 {saving ? 'Saving...' : 'Save'}

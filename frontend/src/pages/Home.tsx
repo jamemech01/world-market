@@ -10,10 +10,11 @@ import {
   Tooltip,
 } from 'react-leaflet'
 import CreateShopForm from '../components/shop/CreateShopForm'
+import ConfirmDialog from '../components/ConfirmDialog'
+import WalletSummary from '../components/WalletSummary'
 import { useAuth } from '../hooks/useAuth'
 import { getMe } from '../services/user'
 import { getShops, getMyShop, openShop } from '../services/shop'
-import { getMyWallet } from '../services/wallet'
 import { getMyOrders, getShopOrders } from '../services/order'
 import 'leaflet/dist/leaflet.css'
 
@@ -25,9 +26,12 @@ type Shop = {
 }
 
 const shopIcon = L.icon({
-  iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+  iconUrl:
+    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+  iconRetinaUrl:
+    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+  shadowUrl:
+    'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
   iconSize: [25, 41],
   iconAnchor: [12, 41],
   shadowSize: [41, 41],
@@ -38,6 +42,7 @@ function MapResizeFix() {
 
   useEffect(() => {
     const t = setTimeout(() => map.invalidateSize(), 0)
+
     return () => clearTimeout(t)
   }, [map])
 
@@ -54,7 +59,9 @@ function MapClickHandler({
   const map = useMap()
 
   useEffect(() => {
-    map.getContainer().style.cursor = enabled ? 'crosshair' : ''
+    map.getContainer().style.cursor = enabled
+      ? 'crosshair'
+      : ''
 
     return () => {
       map.getContainer().style.cursor = ''
@@ -62,7 +69,9 @@ function MapClickHandler({
   }, [enabled, map])
 
   useMapEvents({
-    click: (e) => enabled && onClick(e.latlng.lat, e.latlng.lng),
+    click: (e) =>
+      enabled &&
+      onClick(e.latlng.lat, e.latlng.lng),
   })
 
   return null
@@ -79,7 +88,13 @@ function CenterMyShop({
 
   useEffect(() => {
     if (trigger && myShop) {
-      map.setView([myShop.lat, myShop.lng], map.getZoom())
+      map.flyTo(
+        [myShop.lat, myShop.lng],
+        13,
+        {
+          duration: 1,
+        },
+      )
     }
   }, [trigger, myShop, map])
 
@@ -119,29 +134,55 @@ export default function Home() {
   useAuth()
   const navigate = useNavigate()
 
-  const [isPlacingPin, setIsPlacingPin] = useState(false)
-  const [pinPosition, setPinPosition] = useState<{
-    lat: number
-    lng: number
-  } | null>(null)
+  const [isPlacingPin, setIsPlacingPin] =
+    useState(false)
 
-  const [showCreateShop, setShowCreateShop] = useState(false)
-  const [showOpenShop, setShowOpenShop] = useState(false)
-  const [openShopCode, setOpenShopCode] = useState('')
-  const [openShopError, setOpenShopError] = useState('')
-  const [openingShop, setOpeningShop] = useState(false)
+  const [pinPosition, setPinPosition] =
+    useState<{
+      lat: number
+      lng: number
+    } | null>(null)
 
-  const [canOpenShop, setCanOpenShop] = useState(false)
-  const [myShop, setMyShop] = useState<Shop | null>(null)
-  const [centerMyShop, setCenterMyShop] = useState(false)
-  const [shops, setShops] = useState<Shop[]>([])
-  const [balance, setBalance] = useState('0')
-  const [myOrderAlert, setMyOrderAlert] = useState(false)
-  const [shopOrderAlert, setShopOrderAlert] = useState(false)
+  const [showCreateShop, setShowCreateShop] =
+    useState(false)
+
+  const [showOpenShop, setShowOpenShop] =
+    useState(false)
+
+  const [openShopCode, setOpenShopCode] =
+    useState('')
+
+  const [openShopError, setOpenShopError] =
+    useState('')
+
+  const [openingShop, setOpeningShop] =
+    useState(false)
+
+  const [logoutOpen, setLogoutOpen] =
+    useState(false)
+
+  const [canOpenShop, setCanOpenShop] =
+    useState(false)
+
+  const [myShop, setMyShop] =
+    useState<Shop | null>(null)
+
+  const [centerMyShop, setCenterMyShop] =
+    useState(false)
+
+  const [shops, setShops] =
+    useState<Shop[]>([])
+
+  const [myOrderAlert, setMyOrderAlert] =
+    useState(false)
+
+  const [shopOrderAlert, setShopOrderAlert] =
+    useState(false)
 
   const hasShop = !!myShop
 
-  const savedMapView = sessionStorage.getItem('home_map_view')
+  const savedMapView =
+    sessionStorage.getItem('home_map_view')
 
   const initialMapView = savedMapView
     ? JSON.parse(savedMapView)
@@ -153,7 +194,9 @@ export default function Home() {
 
   useEffect(() => {
     getMe()
-      .then((d) => setCanOpenShop(d.canOpenShop))
+      .then((d) =>
+        setCanOpenShop(d.canOpenShop),
+      )
       .catch(() => { })
 
     getShops()
@@ -164,37 +207,40 @@ export default function Home() {
       .then((d) => setMyShop(d || null))
       .catch(() => setMyShop(null))
 
-    getMyWallet()
-      .then((d) => setBalance(d.balance))
-      .catch(() => { })
-
     getMyOrders()
       .then((orders) => {
-        setMyOrderAlert(
-          orders.some((order: any) => order.status === 'delivered'),
+        const hasAlert = orders.some(
+          (order: any) =>
+            order.status === 'delivered',
         )
+
+        setMyOrderAlert(hasAlert)
       })
       .catch(() => { })
   }, [])
 
   useEffect(() => {
-    if (!myShop) return
+    if (!myShop) {
+      setShopOrderAlert(false)
+      return
+    }
 
     getShopOrders()
       .then((orders) => {
-        setShopOrderAlert(
-          orders.some(
-            (order: any) =>
-              order.status === 'pending' ||
-              order.status === 'accepted',
-          ),
+        const hasAlert = orders.some(
+          (order: any) =>
+            order.status === 'pending' ||
+            order.status === 'accepted',
         )
+
+        setShopOrderAlert(hasAlert)
       })
       .catch(() => { })
   }, [myShop])
 
   const handleLogout = () => {
     localStorage.removeItem('token')
+    sessionStorage.removeItem('home_map_view')
     navigate('/login', { replace: true })
   }
 
@@ -211,6 +257,7 @@ export default function Home() {
       } else {
         setCenterMyShop(true)
       }
+
       return
     }
 
@@ -242,7 +289,8 @@ export default function Home() {
       setIsPlacingPin(true)
     } catch (e: any) {
       setOpenShopError(
-        e.response?.data?.message || 'Invalid open shop code',
+        e.response?.data?.message ||
+        'Invalid open shop code',
       )
     } finally {
       setOpeningShop(false)
@@ -252,12 +300,17 @@ export default function Home() {
   return (
     <div className="relative w-full h-dvh">
       <MapContainer
-        center={[initialMapView.lat, initialMapView.lng]}
+        center={[
+          initialMapView.lat,
+          initialMapView.lng,
+        ]}
         zoom={initialMapView.zoom}
         zoomControl={false}
         className="relative z-0 w-full h-full"
       >
-        <TileLayer url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png" />
+        <TileLayer
+          url="https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png"
+        />
 
         <MapResizeFix />
 
@@ -292,7 +345,11 @@ export default function Home() {
               },
             }}
           >
-            <Tooltip permanent direction="top" offset={[0, -10]}>
+            <Tooltip
+              permanent
+              direction="top"
+              offset={[0, -10]}
+            >
               {s.name}
             </Tooltip>
           </Marker>
@@ -300,7 +357,10 @@ export default function Home() {
 
         {pinPosition && (
           <Marker
-            position={[pinPosition.lat, pinPosition.lng]}
+            position={[
+              pinPosition.lat,
+              pinPosition.lng,
+            ]}
             icon={shopIcon}
           />
         )}
@@ -344,7 +404,9 @@ export default function Home() {
               className="w-full border px-3 py-2 mb-2"
               placeholder="Open shop code"
               value={openShopCode}
-              onChange={(e) => setOpenShopCode(e.target.value)}
+              onChange={(e) =>
+                setOpenShopCode(e.target.value)
+              }
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   handleOpenShop()
@@ -378,40 +440,44 @@ export default function Home() {
                 onClick={handleOpenShop}
                 disabled={openingShop}
               >
-                {openingShop ? 'Checking...' : 'Continue'}
+                {openingShop
+                  ? 'Checking...'
+                  : 'Continue'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <div className="absolute top-4 left-4 border bg-white px-4 py-2 text-sm">
-        ${Number(balance).toFixed(2)}
-      </div>
+      {logoutOpen && (
+        <ConfirmDialog
+          title="Logout"
+          message="Logout from this account?"
+          onConfirm={handleLogout}
+          onCancel={() => setLogoutOpen(false)}
+        />
+      )}
 
-      <div className="absolute top-4 right-4 flex flex-col gap-2 items-end">
+      <div className="absolute top-4 left-4 z-10">
         <button
           type="button"
           className="border bg-white px-3 py-2"
-          onClick={handleLogout}
+          onClick={() => setLogoutOpen(true)}
         >
           Logout
         </button>
+      </div>
 
-        <button
-          type="button"
-          className="border bg-white px-3 py-2"
-          onClick={() => navigate('/wallet')}
-        >
-          Wallet
-        </button>
+      <div className="absolute top-4 right-4 z-10 flex flex-col items-end gap-2">
+        <WalletSummary />
 
         <button
           type="button"
           className="border bg-white px-3 py-2"
           onClick={() => navigate('/orders')}
         >
-          My Orders{myOrderAlert ? ' !' : ''}
+          My Orders
+          {myOrderAlert ? ' !' : ''}
         </button>
 
         {hasShop && (
@@ -420,13 +486,16 @@ export default function Home() {
             className="border bg-white px-3 py-2"
             onClick={() => navigate('/shop/orders')}
           >
-            Shop Orders{shopOrderAlert ? ' !' : ''}
+            Shop Orders
+            {shopOrderAlert ? ' !' : ''}
           </button>
         )}
+      </div>
 
+      <div className="absolute bottom-4 right-4 z-10">
         <button
           type="button"
-          className="border bg-white px-3 py-2"
+          className="border bg-white px-6 py-5 text-lg font-medium"
           onClick={handleShopButton}
         >
           {hasShop ? 'My Shop' : 'Open Shop'}

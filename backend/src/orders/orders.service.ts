@@ -10,7 +10,7 @@ import { RoutingService } from '../routing/routing.service'
 import { CreateOrderDto } from './dto/create-order.dto'
 import { Prisma } from '@prisma/client'
 
-const PENDING_ORDER_TIMEOUT_HOURS = 24
+const PENDING_ORDER_TIMEOUT_HOURS = 1
 
 @Injectable()
 export class OrdersService {
@@ -21,39 +21,52 @@ export class OrdersService {
   constructor(
     private prisma: PrismaService,
     private routingService: RoutingService,
-  ) {}
+  ) { }
 
-  /**
-   * Calculate delivery fee from real road distance.
-   *
-   * <= 3 km = 20 baht
-   * > 3 km  = 20 + 5 baht per additional km
-   *
-   * Examples:
-   * 2.5 km = 20
-   * 3.0 km = 20
-   * 3.2 km = 25
-   * 5.1 km = 35
-   */
   private calculateDeliveryFee(
     distanceKm: number,
   ): number {
     return distanceKm <= 3
       ? 20
-      : 20 +
-          Math.ceil(distanceKm - 3) * 5
+      : 20 + Math.ceil(distanceKm - 3) * 5
   }
 
-  /**
-   * Calculate delivery quote before placing order.
-   *
-   * This does NOT:
-   * - deduct wallet
-   * - reserve stock
-   * - create order
-   *
-   * It only calculates the delivery fee.
-   */
+  private async findShopOrder(
+    orderId: number,
+    userId: number,
+    status: 'pending' | 'accepted',
+  ) {
+    const shop =
+      await this.prisma.shop.findUnique({
+        where: {
+          userId,
+        },
+      })
+
+    if (!shop) {
+      throw new BadRequestException(
+        'Shop not found',
+      )
+    }
+
+    const order =
+      await this.prisma.order.findFirst({
+        where: {
+          id: orderId,
+          shopId: shop.id,
+          status,
+        },
+      })
+
+    if (!order) {
+      throw new BadRequestException(
+        'Invalid order',
+      )
+    }
+
+    return order
+  }
+
   async quote(
     shopId: number,
     deliveryLat: number,
@@ -109,13 +122,6 @@ export class OrdersService {
     buyerId: number,
     dto: CreateOrderDto,
   ) {
-    if (!dto.items || dto.items.length === 0) {
-      throw new BadRequestException(
-        'Order must contain at least one product',
-      )
-    }
-
-    // Prevent duplicate product IDs.
     const productIds = dto.items.map(
       (item) => item.productId,
     )
@@ -132,19 +138,6 @@ export class OrdersService {
       )
     }
 
-    // Validate quantities
-    for (const item of dto.items) {
-      if (
-        !Number.isInteger(item.quantity) ||
-        item.quantity <= 0
-      ) {
-        throw new BadRequestException(
-          'Quantity must be a positive integer',
-        )
-      }
-    }
-
-    // Validate delivery location
     if (
       !Number.isFinite(dto.deliveryLat) ||
       !Number.isFinite(dto.deliveryLng)
@@ -154,7 +147,6 @@ export class OrdersService {
       )
     }
 
-    // Find shop
     const shop =
       await this.prisma.shop.findUnique({
         where: {
@@ -168,11 +160,6 @@ export class OrdersService {
       )
     }
 
-    // Calculate real road distance
-    // AGAIN on the server when actually creating the order.
-    //
-    // We intentionally do not trust the delivery fee
-    // calculated by the frontend.
     const route =
       await this.routingService.getDrivingRoute(
         shop.lat,
@@ -191,7 +178,6 @@ export class OrdersService {
 
     return this.prisma.$transaction(
       async (tx) => {
-        // Find products belonging to this shop
         const products =
           await tx.product.findMany({
             where: {
@@ -211,16 +197,19 @@ export class OrdersService {
           )
         }
 
-        // Calculate product total
+        const productsById = new Map(
+          products.map((product) => [
+            product.id,
+            product,
+          ]),
+        )
+
         let productTotal =
           new Prisma.Decimal(0)
 
         for (const item of dto.items) {
           const product =
-            products.find(
-              (p) =>
-                p.id === item.productId,
-            )
+            productsById.get(item.productId)
 
           if (!product) {
             throw new BadRequestException(
@@ -255,7 +244,6 @@ export class OrdersService {
             deliveryFeeDecimal,
           )
 
-        // Find buyer wallet
         const wallet =
           await tx.wallet.findUnique({
             where: {
@@ -279,11 +267,6 @@ export class OrdersService {
           )
         }
 
-        // Reserve stock
-        //
-        // Use stock >= quantity in WHERE
-        // so concurrent orders cannot
-        // decrement stock below zero.
         for (const item of dto.items) {
           const updated =
             await tx.product.updateMany({
@@ -310,10 +293,6 @@ export class OrdersService {
           }
         }
 
-        // Hold buyer's money.
-        //
-        // Money is removed from buyer
-        // but NOT transferred to shop yet.
         await tx.wallet.update({
           where: {
             id: wallet.id,
@@ -327,31 +306,17 @@ export class OrdersService {
           },
         })
 
-        await tx.walletTransaction.create({
-          data: {
-            walletId: wallet.id,
-            type: 'hold',
-            amount: totalAmount,
-          },
-        })
-
-        // Create order
         return tx.order.create({
           data: {
             buyerId,
             shopId: dto.shopId,
-
             totalAmount,
-
             deliveryFee:
               deliveryFeeDecimal,
-
             deliveryLat:
               dto.deliveryLat,
-
             deliveryLng:
               dto.deliveryLng,
-
             status: 'pending',
 
             items: {
@@ -359,22 +324,17 @@ export class OrdersService {
                 dto.items.map(
                   (item) => {
                     const product =
-                      products.find(
-                        (p) =>
-                          p.id ===
-                          item.productId,
+                      productsById.get(
+                        item.productId,
                       )!
 
                     return {
                       productId:
                         item.productId,
-
                       productName:
                         product.name,
-
                       quantity:
                         item.quantity,
-
                       price:
                         product.price,
                     }
@@ -448,37 +408,16 @@ export class OrdersService {
     orderId: number,
     userId: number,
   ) {
-    const shop =
-      await this.prisma.shop.findUnique({
-        where: {
-          userId,
-        },
-      })
-
-    if (!shop) {
-      throw new BadRequestException(
-        'Shop not found',
-      )
-    }
-
     const order =
-      await this.prisma.order.findFirst({
-        where: {
-          id: orderId,
-          shopId: shop.id,
-          status: 'pending',
-        },
-      })
-
-    if (!order) {
-      throw new BadRequestException(
-        'Invalid order',
+      await this.findShopOrder(
+        orderId,
+        userId,
+        'pending',
       )
-    }
 
     return this.prisma.order.update({
       where: {
-        id: orderId,
+        id: order.id,
       },
 
       data: {
@@ -491,33 +430,11 @@ export class OrdersService {
     orderId: number,
     userId: number,
   ) {
-    const shop =
-      await this.prisma.shop.findUnique({
-        where: {
-          userId,
-        },
-      })
-
-    if (!shop) {
-      throw new BadRequestException(
-        'Shop not found',
-      )
-    }
-
-    const order =
-      await this.prisma.order.findFirst({
-        where: {
-          id: orderId,
-          shopId: shop.id,
-          status: 'pending',
-        },
-      })
-
-    if (!order) {
-      throw new BadRequestException(
-        'Invalid order',
-      )
-    }
+    await this.findShopOrder(
+      orderId,
+      userId,
+      'pending',
+    )
 
     return this.rejectOrder(orderId)
   }
@@ -560,7 +477,6 @@ export class OrdersService {
           )
         }
 
-        // Refund buyer
         await tx.wallet.update({
           where: {
             id: wallet.id,
@@ -577,42 +493,31 @@ export class OrdersService {
         await tx.walletTransaction.create({
           data: {
             walletId: wallet.id,
+            orderId: order.id,
             type: 'refund',
-            amount:
-              order.totalAmount,
+            amount: order.totalAmount,
           },
         })
 
-        // Restore stock
         for (const item of order.items) {
           if (
             item.productId !== null
           ) {
-            const product =
-              await tx.product.findUnique({
-                where: {
-                  id: item.productId,
-                },
-              })
+            await tx.product.updateMany({
+              where: {
+                id: item.productId,
+              },
 
-            if (product) {
-              await tx.product.update({
-                where: {
-                  id: item.productId,
+              data: {
+                stock: {
+                  increment:
+                    item.quantity,
                 },
-
-                data: {
-                  stock: {
-                    increment:
-                      item.quantity,
-                  },
-                },
-              })
-            }
+              },
+            })
           }
         }
 
-        // Reject order
         return tx.order.update({
           where: {
             id: orderId,
@@ -630,37 +535,16 @@ export class OrdersService {
     orderId: number,
     userId: number,
   ) {
-    const shop =
-      await this.prisma.shop.findUnique({
-        where: {
-          userId,
-        },
-      })
-
-    if (!shop) {
-      throw new BadRequestException(
-        'Shop not found',
-      )
-    }
-
     const order =
-      await this.prisma.order.findFirst({
-        where: {
-          id: orderId,
-          shopId: shop.id,
-          status: 'accepted',
-        },
-      })
-
-    if (!order) {
-      throw new BadRequestException(
-        'Invalid order',
+      await this.findShopOrder(
+        orderId,
+        userId,
+        'accepted',
       )
-    }
 
     return this.prisma.order.update({
       where: {
-        id: orderId,
+        id: order.id,
       },
 
       data: {
@@ -722,7 +606,6 @@ export class OrdersService {
           )
         }
 
-        // Release held money to shop
         await tx.wallet.update({
           where: {
             id: wallet.id,
@@ -739,13 +622,12 @@ export class OrdersService {
         await tx.walletTransaction.create({
           data: {
             walletId: wallet.id,
+            orderId: order.id,
             type: 'sale',
-            amount:
-              order.totalAmount,
+            amount: order.totalAmount,
           },
         })
 
-        // Buyer confirmed received
         return tx.order.update({
           where: {
             id: orderId,
@@ -763,10 +645,10 @@ export class OrdersService {
   async autoRejectStaleOrders() {
     const cutoff = new Date(
       Date.now() -
-        PENDING_ORDER_TIMEOUT_HOURS *
-          60 *
-          60 *
-          1000,
+      PENDING_ORDER_TIMEOUT_HOURS *
+      60 *
+      60 *
+      1000,
     )
 
     const staleOrders =

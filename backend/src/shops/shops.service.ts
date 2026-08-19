@@ -11,14 +11,20 @@ import { UpdateShopDto } from './dto/update-shop.dto'
 
 @Injectable()
 export class ShopsService {
-  constructor(private prisma: PrismaService) { }
+  constructor(
+    private prisma: PrismaService,
+  ) {}
 
-  async create(userId: number, dto: CreateShopDto) {
-    const user = await this.prisma.user.findUnique({
-      where: {
-        id: userId,
-      },
-    })
+  async create(
+    userId: number,
+    dto: CreateShopDto,
+  ) {
+    const user =
+      await this.prisma.user.findUnique({
+        where: {
+          id: userId,
+        },
+      })
 
     if (!user?.canOpenShop) {
       throw new ForbiddenException(
@@ -26,11 +32,12 @@ export class ShopsService {
       )
     }
 
-    const existing = await this.prisma.shop.findUnique({
-      where: {
-        userId,
-      },
-    })
+    const existing =
+      await this.prisma.shop.findUnique({
+        where: {
+          userId,
+        },
+      })
 
     if (existing) {
       throw new ConflictException(
@@ -52,7 +59,8 @@ export class ShopsService {
     userId: number,
     code: string,
   ) {
-    const shopOpenCode = process.env.SHOP_OPEN_CODE
+    const shopOpenCode =
+      process.env.SHOP_OPEN_CODE
 
     if (!shopOpenCode || code !== shopOpenCode) {
       throw new UnauthorizedException(
@@ -98,11 +106,12 @@ export class ShopsService {
     userId: number,
     dto: UpdateShopDto,
   ) {
-    const shop = await this.prisma.shop.findUnique({
-      where: {
-        userId,
-      },
-    })
+    const shop =
+      await this.prisma.shop.findUnique({
+        where: {
+          userId,
+        },
+      })
 
     if (!shop) {
       throw new NotFoundException(
@@ -121,11 +130,12 @@ export class ShopsService {
   }
 
   async delete(userId: number) {
-    const shop = await this.prisma.shop.findUnique({
-      where: {
-        userId,
-      },
-    })
+    const shop =
+      await this.prisma.shop.findUnique({
+        where: {
+          userId,
+        },
+      })
 
     if (!shop) {
       throw new ForbiddenException(
@@ -133,81 +143,88 @@ export class ShopsService {
       )
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const orders = await tx.order.findMany({
-        where: {
-          shopId: shop.id,
-          status: {
-            in: ['pending', 'accepted'],
-          },
-        },
-        include: {
-          items: true,
-        },
-      })
-
-      for (const order of orders) {
-        const wallet = await tx.wallet.findUnique({
-          where: {
-            userId: order.buyerId,
-          },
-        })
-
-        if (!wallet) {
-          throw new ConflictException(
-            `Buyer wallet not found for order #${order.id}`,
-          )
-        }
-
-        await tx.wallet.update({
-          where: {
-            id: wallet.id,
-          },
-          data: {
-            balance: {
-              increment: order.totalAmount,
-            },
-          },
-        })
-
-        await tx.walletTransaction.create({
-          data: {
-            walletId: wallet.id,
-            type: 'refund',
-            amount: order.totalAmount,
-          },
-        })
-
-        for (const item of order.items) {
-          if (item.productId !== null) {
-            await tx.product.update({
-              where: {
-                id: item.productId,
+    return this.prisma.$transaction(
+      async (tx) => {
+        const orders =
+          await tx.order.findMany({
+            where: {
+              shopId: shop.id,
+              status: {
+                in: ['pending', 'accepted'],
               },
-              data: {
-                stock: {
-                  increment: item.quantity,
-                },
+            },
+            include: {
+              items: true,
+            },
+          })
+
+        for (const order of orders) {
+          const wallet =
+            await tx.wallet.findUnique({
+              where: {
+                userId: order.buyerId,
               },
             })
+
+          if (!wallet) {
+            throw new ConflictException(
+              `Buyer wallet not found for order #${order.id}`,
+            )
           }
+
+          await tx.wallet.update({
+            where: {
+              id: wallet.id,
+            },
+            data: {
+              balance: {
+                increment:
+                  order.totalAmount,
+              },
+            },
+          })
+
+          await tx.walletTransaction.create({
+            data: {
+              walletId: wallet.id,
+              type: 'refund',
+              amount:
+                order.totalAmount,
+            },
+          })
+
+          for (const item of order.items) {
+            if (item.productId !== null) {
+              await tx.product.updateMany({
+                where: {
+                  id: item.productId,
+                },
+                data: {
+                  stock: {
+                    increment:
+                      item.quantity,
+                  },
+                },
+              })
+            }
+          }
+
+          await tx.order.update({
+            where: {
+              id: order.id,
+            },
+            data: {
+              status: 'rejected',
+            },
+          })
         }
 
-        await tx.order.update({
+        return tx.shop.delete({
           where: {
-            id: order.id,
-          },
-          data: {
-            status: 'rejected',
+            id: shop.id,
           },
         })
-      }
-
-      return tx.shop.delete({
-        where: {
-          id: shop.id,
-        },
-      })
-    })
+      },
+    )
   }
 }

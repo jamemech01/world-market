@@ -1,13 +1,16 @@
 import { useNavigate } from 'react-router-dom'
 import type { ReactNode } from 'react'
+import WalletSummary from '../components/WalletSummary'
 
 type Props = {
-  title: string
   children: ReactNode
   onBack?: () => void
 }
 
-export default function PageLayout({ title, children, onBack }: Props) {
+export default function PageLayout({
+  children,
+  onBack,
+}: Props) {
   const navigate = useNavigate()
 
   return (
@@ -21,7 +24,9 @@ export default function PageLayout({ title, children, onBack }: Props) {
           Back
         </button>
 
-        <h1 className="text-lg font-medium">{title}</h1>
+        <div className="ml-auto">
+          <WalletSummary />
+        </div>
       </header>
 
       <main className="p-4 max-w-2xl mx-auto">
